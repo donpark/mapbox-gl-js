@@ -11,3 +11,4 @@
 /ARCHIVE
 *.sublime-*
 coverage
+/temp/cache
