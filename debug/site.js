@@ -9,7 +9,7 @@ var map = new mapboxgl.Map({
     center: [45.4385, 12.3338],
     style: '/debug/style.json',
     hash: true,
-    maxBounds: [[45.416, 12.300547], [45.462, 12.3685]]
+    maxBounds: [/* sw */ [45.416, 12.300547], /* ne */ [45.462, 12.3685]]
 });
 
 map.addControl(new mapboxgl.Navigation());
