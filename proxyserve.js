@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+// WARNING: proxyserve SHOULD NOT be used in PRODUCTION.
+// proxyserve was created for DEVELOPMENT-USE ONLY, specifically for offline development and testing use-cases.
+// Mapbox T&S allows only client-side cache of maps, not server-side.
+
 /**
  * Module dependencies.
  */
