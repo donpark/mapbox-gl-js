@@ -3,15 +3,19 @@ mapboxgl.accessToken = getAccessToken();
 
 var map = new mapboxgl.Map({
     container: 'map',
-    zoom: 12.5,
-    center: [38.888, -77.01866],
+    minZoom: 13.0,
+    maxZoom: 22.0,
+    zoom: 13.5,
+    center: [45.4385, 12.3338],
     style: '/debug/style.json',
-    hash: true
+    hash: true,
+    maxBounds: [[45.416, 12.300547], [45.462, 12.3685]]
 });
 
 map.addControl(new mapboxgl.Navigation());
 
-map.addSource('geojson', new mapboxgl.GeoJSONSource({data: '/debug/route.json'}));
+// map.addSource('geojson', new mapboxgl.GeoJSONSource({data: '/debug/route.json'}));
+map.addSource('geojson', new mapboxgl.GeoJSONSource());
 
 // keyboard shortcut for comparing rendering with Mapbox GL native
 document.onkeypress = function(e) {
