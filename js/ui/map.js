@@ -73,7 +73,7 @@ util.extend(Map.prototype, {
         bearing: 0,
 
         minZoom: 0,
-        maxZoom: 20,
+        maxZoom: 22,
 
         interactive: true,
         hash: false,
