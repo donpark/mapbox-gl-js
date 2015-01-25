@@ -5,14 +5,6 @@ var browser = require('../util/browser');
 var mat4 = require('gl-matrix').mat4;
 var FrameHistory = require('./frame_history');
 
-var drawSymbol = require('./draw_symbol');
-var drawLine = require('./draw_line');
-var drawFill = require('./draw_fill');
-var drawRaster = require('./draw_raster');
-var drawDebug = require('./draw_debug');
-var drawBackground = require('./draw_background');
-var drawVertices = require('./draw_vertices');
-
 /*
  * Initialize a new painter object.
  *
@@ -75,23 +67,27 @@ GLPainter.prototype.setup = function() {
         ['u_matrix', 'u_brightness_low', 'u_brightness_high', 'u_saturation_factor', 'u_spin_weights', 'u_contrast_factor', 'u_opacity0', 'u_opacity1', 'u_image0', 'u_image1', 'u_tl_parent', 'u_scale_parent', 'u_buffer_scale']);
 
     this.lineShader = gl.initializeShader('line',
-        ['a_pos', 'a_extrude', 'a_linesofar'],
-        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_color', 'u_ratio', 'u_dasharray', 'u_blur']);
+        ['a_pos', 'a_data'],
+        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_color', 'u_ratio', 'u_blur']);
 
     this.linepatternShader = gl.initializeShader('linepattern',
-        ['a_pos', 'a_extrude', 'a_linesofar'],
+        ['a_pos', 'a_data'],
         ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_ratio', 'u_pattern_size', 'u_pattern_tl', 'u_pattern_br', 'u_point', 'u_blur', 'u_fade']);
+
+    this.linesdfpatternShader = gl.initializeShader('linesdfpattern',
+        ['a_pos', 'a_data'],
+        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_color', 'u_ratio', 'u_blur', 'u_patternscale', 'u_tex_y', 'u_image', 'u_sdfgamma']);
 
     this.dotShader = gl.initializeShader('dot',
         ['a_pos'],
         ['u_matrix', 'u_size', 'u_color', 'u_blur']);
 
     this.sdfShader = gl.initializeShader('sdf',
-        ['a_pos', 'a_tex', 'a_offset', 'a_angle', 'a_minzoom', 'a_maxzoom', 'a_rangeend', 'a_rangestart', 'a_labelminzoom'],
+        ['a_pos', 'a_offset', 'a_data1', 'a_data2'],
         ['u_matrix', 'u_exmatrix', 'u_texture', 'u_texsize', 'u_color', 'u_gamma', 'u_buffer', 'u_angle', 'u_zoom', 'u_flip', 'u_fadedist', 'u_minfadezoom', 'u_maxfadezoom', 'u_fadezoom']);
 
     this.iconShader = gl.initializeShader('icon',
-        ['a_pos', 'a_tex', 'a_offset', 'a_angle', 'a_minzoom', 'a_maxzoom', 'a_rangeend', 'a_rangestart', 'a_labelminzoom'],
+        ['a_pos', 'a_offset', 'a_data1', 'a_data2'],
         ['u_matrix', 'u_exmatrix', 'u_texture', 'u_texsize', 'u_angle', 'u_zoom', 'u_flip', 'u_fadedist', 'u_minfadezoom', 'u_maxfadezoom', 'u_fadezoom', 'u_opacity']);
 
     this.outlineShader = gl.initializeShader('outline',
@@ -163,9 +159,9 @@ GLPainter.prototype.clearStencil = function() {
     gl.clear(gl.STENCIL_BUFFER_BIT);
 };
 
-GLPainter.prototype.drawClippingMask = function() {
+GLPainter.prototype.drawClippingMask = function(tile) {
     var gl = this.gl;
-    gl.switchShader(this.fillShader, this.tile.posMatrix, this.tile.exMatrix);
+    gl.switchShader(this.fillShader, tile.posMatrix);
     gl.colorMask(false, false, false, false);
 
     // Clear the entire stencil buffer, except for the 7th bit, which stores
@@ -201,90 +197,65 @@ GLPainter.prototype.bindDefaultFramebuffer = function() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 };
 
-GLPainter.prototype.render = function(style) {
+var draw = {
+    symbol: require('./draw_symbol'),
+    line: require('./draw_line'),
+    fill: require('./draw_fill'),
+    raster: require('./draw_raster'),
+    background: require('./draw_background'),
+    debug: require('./draw_debug'),
+    vertices: require('./draw_vertices')
+};
+
+GLPainter.prototype.render = function(style, options) {
     this.style = style;
+    this.options = options;
+
+    this.lineAtlas = style.lineAtlas;
+
+    this.spriteAtlas = style.spriteAtlas;
+    this.spriteAtlas.setSprite(style.sprite);
 
     this.glyphAtlas = style.glyphAtlas;
     this.glyphAtlas.bind(this.gl);
 
+    this.frameHistory.record(this.transform.zoom);
     this.prepareBuffers();
 
-    var i, len, group, source;
-
-    // Render the groups
-    var groups = style.layerGroups;
-    for (i = 0, len = groups.length; i < len; i++) {
-        group = groups[i];
-        source = style.sources[group.source];
+    for (var i = style._groups.length - 1; i >= 0; i--) {
+        var group = style._groups[i];
+        var source = style.sources[group.source];
 
         if (source) {
             this.clearStencil();
             source.render(group, this);
 
         } else if (group.source === undefined) {
-            this.draw(undefined, style, group, { background: true });
+            this.drawLayers(group, this.identityMatrix);
         }
     }
 };
 
-GLPainter.prototype.draw = function glPainterDraw(tile, style, layers, params) {
-    this.tile = tile;
+GLPainter.prototype.drawTile = function(tile, layers) {
+    this.drawClippingMask(tile);
+    this.drawLayers(layers, tile.posMatrix, tile);
 
-    if (tile) {
-        this.drawClippingMask();
-    }
-
-    this.frameHistory.record(this.transform.zoom);
-    this.drawLayers(tile, style, layers, params);
-
-    if (params.debug) {
-        drawDebug(this.gl, this, tile, params);
+    if (this.options.debug) {
+        draw.debug(this, tile);
     }
 };
 
-GLPainter.prototype.drawLayers = function(tile, style, layers, params, matrix) {
-    // Draw layers front-to-back.
-    // Layers are already in reverse order from style.restructure()
-    for (var i = 0; i < layers.length; i++) {
-        this.drawLayer(tile, style, layers[i], params, matrix, tile && tile.buckets);
-    }
-};
+GLPainter.prototype.drawLayers = function(layers, matrix, tile) {
+    for (var i = layers.length - 1; i >= 0; i--) {
+        var layer = layers[i];
 
-GLPainter.prototype.drawLayer = function(tile, style, layer, params, matrix, buckets) {
-    var gl = this.gl;
+        if (layer.hidden)
+            continue;
 
-    var layerStyle = style.computed[layer.id];
-    if (!layerStyle || layerStyle.hidden) return;
+        draw[layer.type](this, layer, matrix, tile);
 
-    if (layer.layers && layer.type === 'raster') {
-        drawRaster(gl, this, buckets[layer.bucket], layerStyle, params, style, layer, tile);
-    } else if (params.background) {
-        drawBackground(gl, this, undefined, layerStyle, this.identityMatrix, params, style.sprite);
-    } else {
-
-        var bucket = buckets[layer.bucket];
-        // There are no vertices yet for this layer.
-        if (!bucket || (bucket.hasData && !bucket.hasData())) return;
-
-        var type = bucket.type;
-
-        if (bucket.minZoom && this.transform.zoom < bucket.minZoom) return;
-        if (bucket.maxZoom && this.transform.zoom >= bucket.maxZoom) return;
-
-        var draw = type === 'symbol' ? drawSymbol :
-                   type === 'fill' ? drawFill :
-                   type === 'line' ? drawLine :
-                   type === 'raster' ? drawRaster : null;
-
-        if (draw) {
-            var useMatrix = matrix || this.tile.posMatrix;
-            draw(gl, this, bucket, layerStyle, useMatrix, params, style.sprite);
-        } else {
-            console.warn('No bucket type specified');
-        }
-
-        if (params.vertices && !layer.layers) {
-            drawVertices(gl, this, bucket);
+        if (this.options.vertices) {
+            draw.vertices(this, layer, matrix, tile);
         }
     }
 };

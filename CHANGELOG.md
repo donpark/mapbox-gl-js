@@ -2,6 +2,30 @@
 
 An in-progress version being developed in the `mb-pages` branch.
 
+#### Breaking
+
+* HTTP_URL and HTTPS_URL config options must no longer include a `/v4` path prefix.
+* `addClass`, `removeClass`, `setClasses`, `hasClass`, and `getClasses` are now methods
+  on Map.
+* `Style#cascade` is now private, pending a public style mutation API (#755).
+* The format for `featuresAt` results changed. Instead of result-per-geometry-cross-layer,
+  each result has a `layers` array with all layers that contain the feature. This avoids
+  duplication of geometry and properties in the result set.
+
+## 0.5.2 (Jan 07 2015)
+
+#### Bugfixes
+
+* Remove tiles for unused sources (#863)
+* Fix fill pattern alignment
+
+#### Improvements
+
+* Add GeoJSONSource maxzoom option (#760)
+* Return ref layers in featuresAt (#847)
+* Return any extra layer keys provided in the stylesheet in featuresAt
+* Faster protobuf parsing
+
 ## 0.5.1 (Dec 19 2014)
 
 #### Bugfixes

@@ -8,6 +8,8 @@ var resolveTokens = require('../util/token');
 var Placement = require('../symbol/placement');
 var Shaping = require('../symbol/shaping');
 var resolveText = require('../symbol/resolve_text');
+var resolveIcons = require('../symbol/resolve_icons');
+var mergeLines = require('../symbol/mergelines');
 
 module.exports = SymbolBucket;
 
@@ -17,17 +19,6 @@ function SymbolBucket(layoutProperties, buffers, collision, elementGroups) {
     this.layoutProperties = layoutProperties;
     this.buffers = buffers;
     this.collision = collision;
-
-    if (layoutProperties['symbol-placement'] === 'line') {
-        if (!layoutProperties.hasOwnProperty('text-rotation-alignment')) {
-            layoutProperties['text-rotation-alignment'] = 'map';
-        }
-        if (!layoutProperties.hasOwnProperty('icon-rotation-alignment')) {
-            layoutProperties['icon-rotation-alignment'] = 'map';
-        }
-
-        layoutProperties['symbol-avoid-edges'] = true;
-    }
 
     if (elementGroups) {
         this.elementGroups = elementGroups;
@@ -84,33 +75,45 @@ SymbolBucket.prototype.addFeatures = function() {
     var fontstack = layoutProperties['text-font'];
     var textOffset = [layoutProperties['text-offset'][0] * oneEm, layoutProperties['text-offset'][1] * oneEm];
 
-    for (var k = 0; k < features.length; k++) {
+    var geometries = [],
+        k;
 
-        var feature = features[k];
-        var text = textFeatures[k];
-        var lines = feature.loadGeometry();
+    for (k = 0; k < features.length; k++) {
+        geometries.push(features[k].loadGeometry());
+    }
+
+    if (layoutProperties['symbol-placement'] === 'line') {
+        var merged = mergeLines(features, textFeatures, geometries);
+
+        geometries = merged.geometries;
+        features = merged.features;
+        textFeatures = merged.textFeatures;
+    }
+
+    for (k = 0; k < features.length; k++) {
+        if (!geometries[k]) continue;
 
         var shaping = false;
-        if (text) {
-            shaping = Shaping.shape(text, fontstack, this.stacks, maxWidth,
+        if (textFeatures[k]) {
+            shaping = Shaping.shape(textFeatures[k], fontstack, this.stacks, maxWidth,
                     lineHeight, horizontalAlign, verticalAlign, justify, spacing, textOffset);
         }
 
         var image = false;
-        if (this.sprite && layoutProperties['icon-image']) {
-            image = this.sprite[resolveTokens(feature.properties, layoutProperties['icon-image'])];
+        if (this.icons && layoutProperties['icon-image']) {
+            image = this.icons[resolveTokens(features[k].properties, layoutProperties['icon-image'])];
 
             if (image) {
-                // match glyph tex object. TODO change
-                image.w = image.width;
-                image.h = image.height;
-
-                if (image.sdf) this.elementGroups.sdfIcons = true;
+                if (typeof this.elementGroups.sdfIcons === 'undefined') {
+                    this.elementGroups.sdfIcons = image.sdf;
+                } else if (this.elementGroups.sdfIcons != image.sdf) {
+                    console.warn('Style sheet warning: Cannot mix SDF and non-SDF icons in one bucket');
+                }
             }
         }
 
         if (!shaping && !image) continue;
-        this.addFeature(lines, this.stacks, shaping, image);
+        this.addFeature(geometries[k], this.stacks, shaping, image);
     }
 };
 
@@ -285,14 +288,21 @@ SymbolBucket.prototype.getDependencies = function(tile, actor, callback) {
 
 SymbolBucket.prototype.getIconDependencies = function(tile, actor, callback) {
     if (this.layoutProperties['icon-image']) {
-        if (SymbolBucket.sprite) {
-            this.sprite = SymbolBucket.sprite;
-            callback();
+        var features = this.features;
+        var layoutProperties = this.layoutProperties;
+        var icons = resolveIcons(features, layoutProperties);
+
+        if (icons.length) {
+            actor.send('get icons', {
+                id: tile.id,
+                icons: icons
+            }, function(err, newicons) {
+                if (err) return callback(err);
+                this.icons = newicons;
+                callback();
+            }.bind(this));
         } else {
-            actor.send('get sprite json', {}, (err, data) => {
-                SymbolBucket.sprite = this.sprite = data.sprite;
-                callback(err);
-            });
+            callback();
         }
     } else {
         callback();

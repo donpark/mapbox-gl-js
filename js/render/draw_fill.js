@@ -5,11 +5,16 @@ var mat3 = require('gl-matrix').mat3;
 
 module.exports = drawFill;
 
-function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprite) {
+function drawFill(painter, layer, posMatrix, tile) {
+    // No data
+    if (!tile.buffers) return;
+    var elementGroups = tile.elementGroups[layer.ref || layer.id];
+    if (!elementGroups) return;
 
-    var translatedPosMatrix = painter.translateMatrix(posMatrix, params.z, layerStyle['fill-translate'], layerStyle['fill-translate-anchor']);
+    var gl = painter.gl;
+    var translatedPosMatrix = painter.translateMatrix(posMatrix, tile.zoom, layer.paint['fill-translate'], layer.paint['fill-translate-anchor']);
 
-    var color = layerStyle['fill-color'];
+    var color = layer.paint['fill-color'];
 
     var vertex, elements, group, count;
 
@@ -37,17 +42,18 @@ function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprit
     gl.colorMask(false, false, false, false);
 
     // Draw the actual triangle fan into the stencil buffer.
-    gl.switchShader(painter.fillShader, translatedPosMatrix, painter.tile.exMatrix);
+    gl.switchShader(painter.fillShader, translatedPosMatrix);
 
     // Draw all buffers
-    vertex = bucket.buffers.fillVertex;
+    vertex = tile.buffers.fillVertex;
     vertex.bind(gl);
-    elements = bucket.buffers.fillElement;
+    elements = tile.buffers.fillElement;
     elements.bind(gl);
 
     var offset, elementOffset;
-    for (var i = 0; i < bucket.elementGroups.groups.length; i++) {
-        group = bucket.elementGroups.groups[i];
+
+    for (var i = 0; i < elementGroups.groups.length; i++) {
+        group = elementGroups.groups[i];
         offset = group.vertexStartIndex * vertex.itemSize;
         gl.vertexAttribPointer(painter.fillShader.a_pos, 2, gl.SHORT, false, 4, offset + 0);
 
@@ -64,12 +70,12 @@ function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprit
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
     gl.stencilMask(0x0);
 
-    var strokeColor = layerStyle['fill-outline-color'];
+    var strokeColor = layer.paint['fill-outline-color'];
 
     // Because we're drawing top-to-bottom, and we update the stencil mask
     // below, we have to draw the outline first (!)
-    if (layerStyle['fill-antialias'] === true && params.antialiasing && !(layerStyle['fill-image'] && !strokeColor)) {
-        gl.switchShader(painter.outlineShader, translatedPosMatrix, painter.tile.exMatrix);
+    if (layer.paint['fill-antialias'] === true && !(layer.paint['fill-image'] && !strokeColor)) {
+        gl.switchShader(painter.outlineShader, translatedPosMatrix);
         gl.lineWidth(2 * browser.devicePixelRatio);
 
         if (strokeColor) {
@@ -90,12 +96,12 @@ function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprit
         gl.uniform4fv(painter.outlineShader.u_color, strokeColor ? strokeColor : color);
 
         // Draw all buffers
-        vertex = bucket.buffers.fillVertex;
-        elements = bucket.buffers.outlineElement;
+        vertex = tile.buffers.fillVertex;
+        elements = tile.buffers.outlineElement;
         elements.bind(gl);
 
-        for (var k = 0; k < bucket.elementGroups.groups.length; k++) {
-            group = bucket.elementGroups.groups[k];
+        for (var k = 0; k < elementGroups.groups.length; k++) {
+            group = elementGroups.groups[k];
             offset = group.vertexStartIndex * vertex.itemSize;
             gl.vertexAttribPointer(painter.outlineShader.a_pos, 2, gl.SHORT, false, 4, offset + 0);
 
@@ -105,13 +111,13 @@ function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprit
         }
     }
 
-    var image = layerStyle['fill-image'];
-    var opacity = layerStyle['fill-opacity'] || 1;
+    var image = layer.paint['fill-image'];
+    var opacity = layer.paint['fill-opacity'] || 1;
     var shader;
 
     if (image) {
         // Draw texture fill
-        var imagePos = imageSprite.getPosition(image, true);
+        var imagePos = painter.spriteAtlas.getPosition(image, true);
         if (!imagePos) return;
 
         shader = painter.patternShader;
@@ -122,7 +128,7 @@ function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprit
         gl.uniform1f(shader.u_mix, painter.transform.zoomFraction);
         gl.uniform1f(shader.u_opacity, opacity);
 
-        var factor = 8 / Math.pow(2, painter.transform.tileZoom - params.z);
+        var factor = 8 / Math.pow(2, painter.transform.tileZoom - tile.zoom);
 
         var matrix = mat3.create();
         mat3.scale(matrix, matrix, [
@@ -132,12 +138,12 @@ function drawFill(gl, painter, bucket, layerStyle, posMatrix, params, imageSprit
 
         gl.uniformMatrix3fv(shader.u_patternmatrix, false, matrix);
 
-        imageSprite.bind(gl, true);
+        painter.spriteAtlas.bind(gl, true);
 
     } else {
         // Draw filling rectangle.
         shader = painter.fillShader;
-        gl.switchShader(shader, params.padded || posMatrix);
+        gl.switchShader(shader, posMatrix);
         gl.uniform4fv(shader.u_color, color);
     }
 

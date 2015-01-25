@@ -4,17 +4,17 @@ var mat3 = require('gl-matrix').mat3;
 
 module.exports = drawBackground;
 
-function drawBackground(gl, painter, bucket, layerStyle, posMatrix, params, imageSprite) {
-    var color = layerStyle['background-color'];
-    var image = layerStyle['background-image'];
-    var opacity = layerStyle['background-opacity'];
+function drawBackground(painter, layer, posMatrix) {
+    var gl = painter.gl;
+    var color = layer.paint['background-color'];
+    var image = layer.paint['background-image'];
+    var opacity = layer.paint['background-opacity'];
     var shader;
 
-    if (image) {
-        // Draw texture fill
-        var imagePos = imageSprite.getPosition(image, true);
-        if (!imagePos) return;
+    var imagePos = image ? painter.spriteAtlas.getPosition(image, true) : null;
 
+    if (imagePos) {
+        // Draw texture fill
         shader = painter.patternShader;
         gl.switchShader(shader, posMatrix);
         gl.uniform1i(shader.u_image, 0);
@@ -45,12 +45,12 @@ function drawBackground(gl, painter, bucket, layerStyle, posMatrix, params, imag
 
         gl.uniformMatrix3fv(shader.u_patternmatrix, false, matrix);
 
-        imageSprite.bind(gl, true);
+        painter.spriteAtlas.bind(gl, true);
 
     } else {
         // Draw filling rectangle.
         shader = painter.fillShader;
-        gl.switchShader(shader, params.padded || posMatrix);
+        gl.switchShader(shader, posMatrix);
         gl.uniform4fv(shader.u_color, color);
     }
 
