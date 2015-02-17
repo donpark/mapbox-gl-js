@@ -13,21 +13,16 @@ var mergeLines = require('../symbol/mergelines');
 
 module.exports = SymbolBucket;
 
-var fullRange = [2 * Math.PI , 0];
+var fullRange = [2 * Math.PI, 0];
 
-function SymbolBucket(layoutProperties, buffers, collision, elementGroups) {
-    this.layoutProperties = layoutProperties;
+function SymbolBucket(buffers, layoutProperties, collision) {
     this.buffers = buffers;
+    this.elementGroups = {
+        text: new ElementGroups(buffers.glyphVertex),
+        icon: new ElementGroups(buffers.iconVertex)
+    };
+    this.layoutProperties = layoutProperties;
     this.collision = collision;
-
-    if (elementGroups) {
-        this.elementGroups = elementGroups;
-    } else {
-        this.elementGroups = {
-            text: new ElementGroups(buffers.glyphVertex),
-            icon: new ElementGroups(buffers.iconVertex)
-        };
-    }
 }
 
 SymbolBucket.prototype.addFeatures = function() {
@@ -106,7 +101,7 @@ SymbolBucket.prototype.addFeatures = function() {
             if (image) {
                 if (typeof this.elementGroups.sdfIcons === 'undefined') {
                     this.elementGroups.sdfIcons = image.sdf;
-                } else if (this.elementGroups.sdfIcons != image.sdf) {
+                } else if (this.elementGroups.sdfIcons !== image.sdf) {
                     console.warn('Style sheet warning: Cannot mix SDF and non-SDF icons in one bucket');
                 }
             }
@@ -143,8 +138,25 @@ SymbolBucket.prototype.addFeature = function(lines, faces, shaping, image) {
         var anchors;
 
         if (layoutProperties['symbol-placement'] === 'line') {
+
+            var iconInterpolationOffset = 0;
+            var textInterpolationOffset = 0;
+
+            if (shaping) {
+                var minX = Infinity;
+                var maxX = -Infinity;
+                for (var g = 0; g < shaping.length; g++) {
+                    minX = Math.min(minX, shaping[g].x);
+                    maxX = Math.max(maxX, shaping[g].x);
+                }
+                var labelLength = maxX - minX;
+                textInterpolationOffset = (labelLength / 2 + glyphSize * 2) * fontScale;
+            }
+
             // Line labels
-            anchors = interpolate(line, layoutProperties['symbol-min-distance'], minScale, collision.maxPlacementScale, collision.tilePixelRatio);
+            anchors = interpolate(line, layoutProperties['symbol-min-distance'],
+                    minScale, collision.maxPlacementScale, collision.tilePixelRatio,
+                    Math.max(textInterpolationOffset, iconInterpolationOffset));
 
             // Sort anchors by segment so that we can start placement with the
             // anchors that can be shown at the lowest zoom levels.
@@ -276,13 +288,11 @@ SymbolBucket.prototype.addSymbols = function(buffer, elementGroups, symbols, sca
 
 SymbolBucket.prototype.getDependencies = function(tile, actor, callback) {
     var firstdone = false;
-    var firsterr;
     this.getTextDependencies(tile, actor, done);
     this.getIconDependencies(tile, actor, done);
     function done(err) {
         if (err || firstdone) callback(err);
         firstdone = true;
-        firsterr = err;
     }
 };
 
@@ -343,8 +353,4 @@ SymbolBucket.prototype.getTextDependencies = function(tile, actor, callback) {
 
         callback();
     });
-};
-
-SymbolBucket.prototype.hasData = function() {
-    return !!this.elementGroups.text.current || !!this.elementGroups.icon.current;
 };

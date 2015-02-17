@@ -72,11 +72,11 @@ GLPainter.prototype.setup = function() {
 
     this.linepatternShader = gl.initializeShader('linepattern',
         ['a_pos', 'a_data'],
-        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_ratio', 'u_pattern_size', 'u_pattern_tl', 'u_pattern_br', 'u_point', 'u_blur', 'u_fade']);
+        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_ratio', 'u_pattern_size_a', 'u_pattern_size_b', 'u_pattern_tl_a', 'u_pattern_br_a', 'u_pattern_tl_b', 'u_pattern_br_b', 'u_blur', 'u_fade', 'u_opacity']);
 
     this.linesdfpatternShader = gl.initializeShader('linesdfpattern',
         ['a_pos', 'a_data'],
-        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_color', 'u_ratio', 'u_blur', 'u_patternscale', 'u_tex_y', 'u_image', 'u_sdfgamma']);
+        ['u_matrix', 'u_exmatrix', 'u_linewidth', 'u_color', 'u_ratio', 'u_blur', 'u_patternscale_a', 'u_tex_y_a', 'u_patternscale_b', 'u_tex_y_b', 'u_image', 'u_sdfgamma', 'u_mix']);
 
     this.dotShader = gl.initializeShader('dot',
         ['a_pos'],
@@ -97,7 +97,7 @@ GLPainter.prototype.setup = function() {
 
     this.patternShader = gl.initializeShader('pattern',
         ['a_pos'],
-        ['u_matrix', 'u_pattern_tl', 'u_pattern_br', 'u_mix', 'u_patternmatrix', 'u_opacity', 'u_image']
+        ['u_matrix', 'u_pattern_tl_a', 'u_pattern_br_a', 'u_pattern_tl_b', 'u_pattern_br_b', 'u_mix', 'u_patternmatrix_a', 'u_patternmatrix_b', 'u_opacity', 'u_image']
     );
 
     this.fillShader = gl.initializeShader('fill',
@@ -220,7 +220,9 @@ GLPainter.prototype.render = function(style, options) {
     this.glyphAtlas.bind(this.gl);
 
     this.frameHistory.record(this.transform.zoom);
+
     this.prepareBuffers();
+    this.clearColor();
 
     for (var i = style._groups.length - 1; i >= 0; i--) {
         var group = style._groups[i];
@@ -284,11 +286,11 @@ GLPainter.prototype.translateMatrix = function(matrix, z, translate, anchor) {
     if (!translate[0] && !translate[1]) return matrix;
 
     if (anchor === 'viewport') {
-        var sin_a = Math.sin(-this.transform.angle);
-        var cos_a = Math.cos(-this.transform.angle);
+        var sinA = Math.sin(-this.transform.angle);
+        var cosA = Math.cos(-this.transform.angle);
         translate = [
-            translate[0] * cos_a - translate[1] * sin_a,
-            translate[0] * sin_a + translate[1] * cos_a
+            translate[0] * cosA - translate[1] * sinA,
+            translate[0] * sinA + translate[1] * cosA
         ];
     }
 

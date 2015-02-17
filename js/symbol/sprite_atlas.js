@@ -12,7 +12,6 @@ function SpriteAtlas(width, height) {
     this.data = false;
     this.texture = 0; // WebGL ID
     this.filter = 0; // WebGL ID
-    this.buffer = 1; // const
     this.pixelRatio = 1;
     this.dirty = true;
 }
@@ -39,7 +38,7 @@ SpriteAtlas.prototype = {
 };
 
 SpriteAtlas.prototype.resize = function(newRatio) {
-    if (this.pixelRatio == newRatio) return false;
+    if (this.pixelRatio === newRatio) return false;
 
     var oldRatio = this.pixelRatio;
     this.pixelRatio = newRatio;
@@ -50,7 +49,7 @@ SpriteAtlas.prototype.resize = function(newRatio) {
     }
 
     if (this.data) {
-        var old_data = this.data;
+        var oldData = this.data;
 
         this.data = false;
         this.allocate();
@@ -63,55 +62,71 @@ SpriteAtlas.prototype.resize = function(newRatio) {
 
         // Basic image scaling. TODO: Replace this with better image scaling.
         var newImage = this.data;
-        var oldImage = old_data;
+        var oldImage = oldData;
 
         for (var y = 0; y < newHeight; y++) {
-            var old_yoffset = Math.floor((y * oldHeight) / newHeight) * oldWidth;
-            var new_yoffset = y * newWidth;
+            var oldYOffset = Math.floor((y * oldHeight) / newHeight) * oldWidth;
+            var newYOffset = y * newWidth;
             for (var x = 0; x < newWidth; x++) {
-                var old_x = Math.floor((x * oldWidth) / newWidth);
-                newImage[new_yoffset + x] = oldImage[old_yoffset + old_x];
+                var oldX = Math.floor((x * oldWidth) / newWidth);
+                newImage[newYOffset + x] = oldImage[oldYOffset + oldX];
             }
         }
 
-        old_data = null;
+        oldData = null;
         this.dirty = true;
     }
 
     return this.dirty;
 };
 
-function copy_bitmap(src, src_stride, src_x, src_y, dst, dst_stride, dst_x, dst_y, width, height) {
-    var src_i = src_y * src_stride + src_x;
-    var dst_i = dst_y * dst_stride + dst_x;
-    for (var y = 0; y < height; y++, src_i += src_stride, dst_i += dst_stride) {
-        for (var x = 0; x < width; x++) {
-            dst[dst_i + x] = src[src_i + x];
+function copyBitmap(src, srcStride, srcX, srcY, dst, dstStride, dstX, dstY, width, height, wrap) {
+    var srcI = srcY * srcStride + srcX;
+    var dstI = dstY * dstStride + dstX;
+    var x, y;
+
+    if (wrap) {
+        // add 1 pixel wrapped padding on each side of the image
+        dstI -= dstStride;
+        for (y = -1; y <= height; y++, srcI = ((y + height) % height + srcY) * srcStride + srcX, dstI += dstStride) {
+            for (x = -1; x <= width; x++) {
+                dst[dstI + x] = src[srcI + ((x + width) % width)];
+            }
+        }
+
+    } else {
+        for (y = 0; y < height; y++, srcI += srcStride, dstI += dstStride) {
+            for (x = 0; x < width; x++) {
+                dst[dstI + x] = src[srcI + x];
+            }
         }
     }
 }
 
-SpriteAtlas.prototype.allocateImage = function(pixel_width, pixel_height) {
+SpriteAtlas.prototype.allocateImage = function(pixelWidth, pixelHeight) {
+
     // Increase to next number divisible by 4, but at least 1.
     // This is so we can scale down the texture coordinates and pack them
     // into 2 bytes rather than 4 bytes.
-    var pack_width = pixel_width + (4 - pixel_width % 4);
-    var pack_height = pixel_height + (4 - pixel_width % 4);
+    // Pad icons to prevent them from polluting neighbours during linear interpolation
+    var padding = 2;
+    var packWidth = pixelWidth + padding + (4 - (pixelWidth + padding) % 4);
+    var packHeight = pixelHeight + padding + (4 - (pixelHeight + padding) % 4);// + 4;
 
     // We have to allocate a new area in the bin, and store an empty image in it.
     // Add a 1px border around every image.
-    var rect = this.bin.allocate(pack_width, pack_height);
+    var rect = this.bin.allocate(packWidth, packHeight);
     if (rect.w === 0) {
         return rect;
     }
 
-    rect.x += this.buffer;
-    rect.y += this.buffer;
+    rect.originalWidth = pixelWidth;
+    rect.originalHeight = pixelHeight;
 
     return rect;
 };
 
-SpriteAtlas.prototype.getImage = function(name) {
+SpriteAtlas.prototype.getImage = function(name, wrap) {
     if (this.images[name]) {
         return this.images[name];
     }
@@ -133,14 +148,14 @@ SpriteAtlas.prototype.getImage = function(name) {
     rect.sdf = pos.sdf;
     this.images[name] = rect;
 
-    this.copy(rect, pos);
+    this.copy(rect, pos, wrap);
 
     return rect;
 };
 
 
 SpriteAtlas.prototype.getPosition = function(name, repeating) {
-    var rect = this.getImage(name);
+    var rect = this.getImage(name, repeating);
     if (!rect) {
         return null;
     }
@@ -158,9 +173,9 @@ SpriteAtlas.prototype.getPosition = function(name, repeating) {
     }
 
     return {
-        size: [ rect.w, rect.h ],
-        tl:   [ (rect.x)          / this.width, (rect.y)          / this.height ],
-        br:   [ (rect.x + rect.w) / this.width, (rect.y + rect.h) / this.height ]
+        size: [rect.w, rect.h],
+        tl: [(rect.x)          / this.width, (rect.y)          / this.height],
+        br: [(rect.x + rect.w) / this.width, (rect.y + rect.h) / this.height]
     };
 };
 
@@ -177,25 +192,26 @@ SpriteAtlas.prototype.allocate = function() {
 };
 
 
-SpriteAtlas.prototype.copy = function(dst, src) {
+SpriteAtlas.prototype.copy = function(dst, src, wrap) {
     // if (!sprite->raster) return;
     if (!this.sprite.img.data) return;
-    var src_img = new Uint32Array(this.sprite.img.data.buffer);
+    var srcImg = new Uint32Array(this.sprite.img.data.buffer);
 
     this.allocate();
-    var dst_img = this.data;
+    var dstImg = this.data;
 
-    copy_bitmap(
-        /* source buffer */  src_img,
+    copyBitmap(
+        /* source buffer */  srcImg,
         /* source stride */  this.sprite.img.width,
         /* source x */       src.x,
         /* source y */       src.y,
-        /* dest buffer */    dst_img,
+        /* dest buffer */    dstImg,
         /* dest stride */    this.width * this.pixelRatio,
         /* dest x */         dst.x * this.pixelRatio,
         /* dest y */         dst.y * this.pixelRatio,
         /* icon dimension */ src.width,
-        /* icon dimension */ src.height
+        /* icon dimension */ src.height,
+        /* wrap */ wrap
     );
 
     this.dirty = true;
@@ -225,11 +241,11 @@ SpriteAtlas.prototype.bind = function(gl, linear) {
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
     }
 
-    var filter_val = linear ? gl.LINEAR : gl.NEAREST;
-    if (filter_val != this.filter) {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter_val);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter_val);
-        this.filter = filter_val;
+    var filterVal = linear ? gl.LINEAR : gl.NEAREST;
+    if (filterVal !== this.filter) {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filterVal);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filterVal);
+        this.filter = filterVal;
     }
 
     if (this.dirty) {

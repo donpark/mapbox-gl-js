@@ -19,10 +19,6 @@ exports.bezier = function(p1x, p1y, p2x, p2y) {
 
 exports.ease = exports.bezier(0.25, 0.1, 0.25, 1);
 
-exports.interp = function (a, b, t) {
-    return (a * (1 - t)) + (b * t);
-};
-
 exports.premultiply = function (c) {
     c[0] *= c[3];
     c[1] *= c[3];
@@ -152,4 +148,14 @@ exports.bindAll = function(fns, context) {
     fns.forEach(function(fn) {
         context[fn] = context[fn].bind(context);
     });
+};
+
+exports.setOptions = function(obj, options) {
+    if (!obj.hasOwnProperty('options')) {
+        obj.options = obj.options ? Object.create(obj.options) : {};
+    }
+    for (var i in options) {
+        obj.options[i] = options[i];
+    }
+    return obj.options;
 };

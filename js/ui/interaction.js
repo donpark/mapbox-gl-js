@@ -103,7 +103,7 @@ function Interaction(el) {
     }
 
     function onmouseup() {
-        panned = pos && firstPos && (pos.x != firstPos.x || pos.y != firstPos.y);
+        panned = pos && firstPos && (pos.x !== firstPos.x || pos.y !== firstPos.y);
 
         rotating = false;
         pos = null;
@@ -112,7 +112,7 @@ function Interaction(el) {
             var last = inertia[inertia.length - 1],
                 first = inertia[0],
                 velocity = last[1].sub(first[1]).div(last[0] - first[0]);
-            interaction.fire('panend',  {inertia: velocity});
+            interaction.fire('panend', {inertia: velocity});
 
         } else interaction.fire('panend');
 
@@ -123,12 +123,16 @@ function Interaction(el) {
     function onmousemove(ev) {
         var point = mousePos(ev);
 
-        if (rotating) { rotate(point); }
-        else if (pos) pan(point);
-        else {
-            var target = ev.toElement;
-            while (target && target != el && target.parentNode) target = target.parentNode;
-            if (target == el) {
+        if (rotating) {
+            rotate(point);
+
+        } else if (pos) {
+            pan(point);
+
+        } else {
+            var target = ev.toElement || ev.target;
+            while (target && target !== el && target.parentNode) target = target.parentNode;
+            if (target === el) {
                 hover(point);
             }
         }
@@ -210,8 +214,8 @@ function Interaction(el) {
         function wheel(e) {
             var deltaY = e.deltaY;
             // Firefox doubles the values on retina screens...
-            if (firefox && e.deltaMode == window.WheelEvent.DOM_DELTA_PIXEL) deltaY /= browser.devicePixelRatio;
-            if (e.deltaMode == window.WheelEvent.DOM_DELTA_LINE) deltaY *= 40;
+            if (firefox && e.deltaMode === window.WheelEvent.DOM_DELTA_PIXEL) deltaY /= browser.devicePixelRatio;
+            if (e.deltaMode === window.WheelEvent.DOM_DELTA_LINE) deltaY *= 40;
             scroll(deltaY, e);
             e.preventDefault();
         }

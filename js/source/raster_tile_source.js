@@ -5,6 +5,7 @@ var ajax = require('../util/ajax');
 var Evented = require('../util/evented');
 var TileCoord = require('./tile_coord');
 var Source = require('./source');
+var normalizeURL = require('../util/mapbox').normalizeTileURL;
 
 module.exports = RasterTileSource;
 
@@ -37,12 +38,14 @@ RasterTileSource.prototype = util.inherit(Evented, {
     render: Source._renderTiles,
 
     _loadTile: function(tile) {
-        ajax.getImage(TileCoord.url(tile.id, this.tiles), function(err, img) {
+        ajax.getImage(normalizeURL(TileCoord.url(tile.id, this.tiles), this.url), function(err, img) {
             if (tile.aborted)
                 return;
 
-            if (err)
-                return this.fire('tile.error', {tile: tile});
+            if (err) {
+                this.fire('tile.error', {tile: tile});
+                return;
+            }
 
             var gl = this.map.painter.gl;
             tile.texture = this.map.painter.getTexture(img.width);

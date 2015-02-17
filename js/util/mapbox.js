@@ -1,6 +1,7 @@
 'use strict';
 
 var config = require('./config');
+var browser = require('./browser');
 
 function normalizeURL(url, pathPrefix, accessToken) {
     accessToken = accessToken || config.ACCESS_TOKEN;
@@ -11,7 +12,7 @@ function normalizeURL(url, pathPrefix, accessToken) {
     }
 
     var https = config.FORCE_HTTPS ||
-        (typeof document !== 'undefined' && 'https:' === document.location.protocol);
+        (typeof document !== 'undefined' && document.location.protocol === 'https:');
 
     url = url.replace(/^mapbox:\/\//, (https ? config.HTTPS_URL : config.HTTP_URL) + pathPrefix);
     url += url.indexOf('?') !== -1 ? '&access_token=' : '?access_token=';
@@ -55,4 +56,10 @@ module.exports.normalizeGlyphsURL = function(url, accessToken) {
         return url;
 
     return normalizeURL(url, '/v4/', accessToken);
+};
+
+module.exports.normalizeTileURL = function(url, sourceUrl) {
+    if (!sourceUrl || !sourceUrl.match(/^mapbox:\/\//))
+        return url;
+    return url.replace(/\.png(?=$|\?)/, browser.devicePixelRatio >= 2 ? '@2x.png' : '.png');
 };

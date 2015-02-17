@@ -42,9 +42,9 @@ module.exports = function drawLine(painter, layer, posMatrix, tile) {
 
     var dasharray = layer.paint['line-dasharray'];
     var image = layer.paint['line-image'];
-    var imagePos = image && painter.spriteAtlas.getPosition(image, true);
 
     if (dasharray) {
+
         shader = painter.linesdfpatternShader;
         gl.switchShader(shader, vtxMatrix, tile.exMatrix);
 
@@ -53,19 +53,29 @@ module.exports = function drawLine(painter, layer, posMatrix, tile) {
         gl.uniform1f(shader.u_blur, blur);
         gl.uniform4fv(shader.u_color, color);
 
+        var posA = painter.lineAtlas.getDash(dasharray.from, layer.layout['line-cap'] === 'round');
+        var posB = painter.lineAtlas.getDash(dasharray.to, layer.layout['line-cap'] === 'round');
         painter.lineAtlas.bind(gl);
-        var pos = painter.lineAtlas.getDash(dasharray.pattern, layer.layout['line-cap'] === 'round');
 
         var patternratio = Math.pow(2, Math.floor(Math.log(painter.transform.scale) / Math.LN2) - tile.zoom) / 8;
-        var scale = [patternratio / pos.width / dasharray.scale, -pos.height / 2];
-        var gamma = painter.lineAtlas.width / (dasharray.scale * pos.width * 256 * browser.devicePixelRatio) / 2;
+        var scaleA = [patternratio / posA.width / dasharray.fromScale, -posA.height / 2];
+        var gammaA = painter.lineAtlas.width / (dasharray.fromScale * posA.width * 256 * browser.devicePixelRatio) / 2;
+        var scaleB = [patternratio / posB.width / dasharray.toScale, -posB.height / 2];
+        var gammaB = painter.lineAtlas.width / (dasharray.toScale * posB.width * 256 * browser.devicePixelRatio) / 2;
 
-        gl.uniform2fv(shader.u_patternscale, scale);
-        gl.uniform1f(shader.u_tex_y, pos.y);
+        gl.uniform2fv(shader.u_patternscale_a, scaleA);
+        gl.uniform1f(shader.u_tex_y_a, posA.y);
+        gl.uniform2fv(shader.u_patternscale_b, scaleB);
+        gl.uniform1f(shader.u_tex_y_b, posB.y);
+
         gl.uniform1i(shader.u_image, 0);
-        gl.uniform1f(shader.u_sdfgamma, gamma);
+        gl.uniform1f(shader.u_sdfgamma, Math.max(gammaA, gammaB));
+        gl.uniform1f(shader.u_mix, dasharray.t);
 
-    } else if (imagePos) {
+    } else if (image) {
+        var imagePosA = painter.spriteAtlas.getPosition(image.from, true);
+        var imagePosB = painter.spriteAtlas.getPosition(image.to, true);
+        if (!imagePosA || !imagePosB) return;
         var factor = 8 / Math.pow(2, painter.transform.tileZoom - tile.zoom);
 
         painter.spriteAtlas.bind(gl, true);
@@ -77,10 +87,14 @@ module.exports = function drawLine(painter, layer, posMatrix, tile) {
         gl.uniform1f(shader.u_ratio, ratio);
         gl.uniform1f(shader.u_blur, blur);
 
-        gl.uniform2fv(shader.u_pattern_size, [imagePos.size[0] * factor, imagePos.size[1] ]);
-        gl.uniform2fv(shader.u_pattern_tl, imagePos.tl);
-        gl.uniform2fv(shader.u_pattern_br, imagePos.br);
-        gl.uniform1f(shader.u_fade, painter.transform.zoomFraction);
+        gl.uniform2fv(shader.u_pattern_size_a, [imagePosA.size[0] * factor * image.fromScale, imagePosB.size[1] ]);
+        gl.uniform2fv(shader.u_pattern_size_b, [imagePosB.size[0] * factor * image.toScale, imagePosB.size[1] ]);
+        gl.uniform2fv(shader.u_pattern_tl_a, imagePosA.tl);
+        gl.uniform2fv(shader.u_pattern_br_a, imagePosA.br);
+        gl.uniform2fv(shader.u_pattern_tl_b, imagePosB.tl);
+        gl.uniform2fv(shader.u_pattern_br_b, imagePosB.br);
+        gl.uniform1f(shader.u_fade, image.t);
+        gl.uniform1f(shader.u_opacity, layer.paint['line-opacity']);
 
     } else {
         shader = painter.lineShader;

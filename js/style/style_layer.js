@@ -3,26 +3,31 @@
 var util = require('../util/util');
 var StyleConstant = require('./style_constant');
 var StyleTransition = require('./style_transition');
-var StyleDeclaration = require('./style_declaration');
+var StyleDeclarationSet = require('./style_declaration_set');
 var LayoutProperties = require('./layout_properties');
 var PaintProperties = require('./paint_properties');
 
 module.exports = StyleLayer;
 
-function StyleLayer(layer) {
+function StyleLayer(layer, constants) {
     this._layer = layer;
+    this._constants = constants;
 
-    this.id  = layer.id;
+    this.id = layer.id;
     this.ref = layer.ref;
+
+    // Resolved and cascaded paint properties.
+    this._resolved = {}; // class name -> StyleDeclarationSet
+    this._cascaded = {}; // property name -> StyleTransition
 
     this.assign(layer);
 }
 
 StyleLayer.prototype = {
-    resolveLayout: function(layers, constants) {
+    resolveLayout: function() {
         if (!this.ref) {
             this.layout = new LayoutProperties[this.type](
-                StyleConstant.resolve(this._layer.layout, constants));
+                StyleConstant.resolveAll(this._layer.layout, this._constants));
 
             if (this.layout['symbol-placement'] === 'line') {
                 if (!this.layout.hasOwnProperty('text-rotation-alignment')) {
@@ -36,54 +41,61 @@ StyleLayer.prototype = {
         }
     },
 
-    resolvePaint: function(layers, constants, globalTrans) {
-        globalTrans = globalTrans || {};
+    setLayoutProperty: function(name, value) {
+        this.layout[name] = StyleConstant.resolve(value, this._constants);
+    },
 
+    getLayoutProperty: function(name) {
+        return this.layout[name];
+    },
+
+    resolveReference: function(layers) {
         if (this.ref) {
             this.assign(layers[this.ref]);
         }
+    },
 
-        // Resolved and cascaded paint properties.
-        this._resolved = {}; // class name -> (property name -> StyleDeclaration)
-        this._cascaded = {}; // property name -> StyleTransition
-
+    resolvePaint: function() {
         for (var p in this._layer) {
             var match = p.match(/^paint(?:\.(.*))?$/);
             if (!match)
                 continue;
-
-            var paint = StyleConstant.resolve(this._layer[p], constants),
-                declarations = this._resolved[match[1] || ''] = {};
-
-            for (var k in paint) {
-                if (/-transition$/.test(k))
-                    continue;
-
-                var declaration = declarations[k] =
-                    new StyleDeclaration(this.type, k, paint[k]);
-
-                var t = paint[k + '-transition'] || {};
-                declaration.transition = {
-                    duration: util.coalesce(t.duration, globalTrans.duration, 300),
-                    delay: util.coalesce(t.delay, globalTrans.delay, 0)
-                };
-            }
+            this._resolved[match[1] || ''] =
+                new StyleDeclarationSet('paint', this.type, this._layer[p], this._constants);
         }
     },
 
-    cascade: function(classes, options, animationLoop) {
+    setPaintProperty: function(name, value, klass) {
+        var declarations = this._resolved[klass || ''];
+        if (!declarations) {
+            declarations = this._resolved[klass || ''] =
+                new StyleDeclarationSet('paint', this.type, {}, this._constants);
+        }
+        declarations[name] = value;
+    },
+
+    getPaintProperty: function(name, klass) {
+        var declarations = this._resolved[klass || ''];
+        if (!declarations)
+            return undefined;
+        return declarations[name];
+    },
+
+    cascade: function(classes, options, globalTrans, animationLoop) {
         for (var klass in this._resolved) {
             if (klass !== "" && !classes[klass])
                 continue;
 
-            var declarations = this._resolved[klass];
-            for (var k in declarations) {
-                var newDeclaration = declarations[k];
-                var newStyleTrans = options.transition ? declarations[k].transition : {duration: 0, delay: 0};
+            var declarations = this._resolved[klass],
+                values = declarations.values();
+
+            for (var k in values) {
+                var newDeclaration = values[k];
                 var oldTransition = this._cascaded[k];
 
                 // Only create a new transition if the declaration changed
                 if (!oldTransition || oldTransition.declaration.json !== newDeclaration.json) {
+                    var newStyleTrans = options.transition ? declarations.transition(k, globalTrans) : {duration: 0, delay: 0};
                     var newTransition = this._cascaded[k] =
                         new StyleTransition(newDeclaration, oldTransition, newStyleTrans);
 
@@ -100,12 +112,12 @@ StyleLayer.prototype = {
         }
     },
 
-    recalculate: function(z) {
+    recalculate: function(z, zoomHistory) {
         var type = this.type,
             calculated = this.paint = new PaintProperties[type]();
 
         for (var k in this._cascaded) {
-            calculated[k] = this._cascaded[k].at(z);
+            calculated[k] = this._cascaded[k].at(z, zoomHistory);
         }
 
         this.hidden = (this.minzoom && z < this.minzoom) ||
@@ -121,12 +133,11 @@ StyleLayer.prototype = {
                 premultiplyLayer(calculated, 'text');
                 premultiplyLayer(calculated, 'icon');
             }
+
+        } else if (calculated[type + '-opacity'] === 0) {
+            this.hidden = true;
         } else {
-            if (calculated[type + '-opacity'] === 0) {
-                this.hidden = true;
-            } else {
-                premultiplyLayer(calculated, type);
-            }
+            premultiplyLayer(calculated, type);
         }
 
         if (this._cascaded['line-dasharray']) {
@@ -137,10 +148,8 @@ StyleLayer.prototype = {
                 this._cascaded['line-width'].at(Math.floor(z), Infinity) :
                 calculated['line-width'];
 
-            calculated['line-dasharray'] = {
-                pattern: dashArray,
-                scale: lineWidth
-            };
+            dashArray.fromScale *= lineWidth;
+            dashArray.toScale *= lineWidth;
         }
 
         return !this.hidden;

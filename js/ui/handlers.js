@@ -13,7 +13,7 @@ function Handlers(map) {
     var inertiaLinearity = 0.2,
         inertiaEasing = util.bezier(0, 0, inertiaLinearity, 1);
 
-    this.interaction = new Interaction(map.container)
+    this.interaction = new Interaction(map.getCanvas())
         .on('click', function(e) {
             map.fire('click', e);
         })
@@ -34,8 +34,9 @@ function Handlers(map) {
             map._move();
         })
         .on('panend', function(e) {
-            if (!e.inertia) map.fire('moveend');
-            else {
+            if (!e.inertia) {
+                map.fire('moveend');
+            } else {
                 // convert velocity to px/s & adjust for increased initial animation speed when easing out
                 var velocity = e.inertia.mult(1000 * inertiaLinearity),
                     speed = velocity.mag();
@@ -64,7 +65,7 @@ function Handlers(map) {
             if (e.delta < 0 && scale !== 0) scale = 1 / scale;
 
             var fromScale = map.ease && isFinite(e.delta) ? map.ease.to : map.transform.scale,
-                duration = !isFinite(e.delta) ? 800 : e.source == 'trackpad' ? 0 : 300;
+                duration = !isFinite(e.delta) ? 800 : e.source === 'trackpad' ? 0 : 300;
 
             map.zoomTo(map.transform.scaleZoom(fromScale * scale), {
                 duration: duration,

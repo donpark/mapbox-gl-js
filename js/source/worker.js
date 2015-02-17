@@ -43,11 +43,17 @@ util.extend(Worker.prototype, {
                 params.id, params.zoom, params.maxZoom,
                 params.tileSize, params.source, params.depth);
 
-            tile.parse(new vt.VectorTile(new Protobuf(new Uint8Array(data))), this.layers, this.actor, callback);
+            tile.data = new vt.VectorTile(new Protobuf(new Uint8Array(data)));
+            tile.parse(tile.data, this.layers, this.actor, callback);
 
             this.loaded[source] = this.loaded[source] || {};
             this.loaded[source][id] = tile;
         }.bind(this));
+    },
+
+    'reload tile': function(params, callback) {
+        var tile = this.loaded[params.source][params.id];
+        tile.parse(tile.data, this.layers, this.actor, callback);
     },
 
     'abort tile': function(params) {
@@ -68,6 +74,7 @@ util.extend(Worker.prototype, {
 
     'parse geojson': function(params, callback) {
         var indexData = function(err, data) {
+            if (err) return callback(err);
             this.geoJSONIndexes[params.source] = geojsonvt(data, {baseZoom: params.maxZoom});
             callback(null);
         }.bind(this);

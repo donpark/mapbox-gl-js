@@ -23,10 +23,11 @@ function WorkerTile(id, zoom, maxZoom, tileSize, source, depth) {
     this.tileSize = tileSize;
     this.source = source;
     this.depth = depth;
-    this.featureTree = new FeatureTree(getGeometry, getType);
 }
 
 WorkerTile.prototype.parse = function(data, layers, actor, callback) {
+    this.featureTree = new FeatureTree(getGeometry, getType);
+
     var i, k,
         tile = this,
         layer,
@@ -59,7 +60,7 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
         if (visibility === 'none')
             continue;
 
-        bucket = createBucket(layer, buffers, collision);
+        bucket = createBucket(layer, buffers, collision, this.zoom);
         bucket.layers = [layer.id];
 
         buckets[bucket.id] = bucket;
@@ -183,7 +184,11 @@ WorkerTile.prototype.parse = function(data, layers, actor, callback) {
         }
 
         remaining--;
-        if (!remaining) return done();
+
+        if (!remaining) {
+            done();
+            return;
+        }
 
         // try parsing the next bucket, if it is ready
         if (bucket.next) {
